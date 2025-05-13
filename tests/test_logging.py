@@ -1,4 +1,4 @@
-log = Logger("system")
+log = Logger("system") #test
 log.debug('debug test')
 log.info('test info') 
 log.error('test error')
