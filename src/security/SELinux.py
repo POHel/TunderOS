@@ -1,12 +1,12 @@
 #created by Antarctica
 import json
-import os
-import sys
 from pathlib import Path
 from typing import List, Optional
-INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) #Определение базового(внутренного) пути к папке библиотек (логирование и обработка ошибок)
+import sys
+import os
+INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(INIT_DIR)
-from src.libs.logger import Logger
+from src.libs.logging import Logger
 from src.libs.CrashHandler import CrashHandler, TunderCrash
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent #Определяем базовый путь для проекта, используя переменную file, которая должна быть определена ранее в коде. Мы переходим на три уровня вверх по директориям.
