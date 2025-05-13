@@ -1,0 +1,17 @@
+{
+  "mode": "enforcing",
+  "rules": {
+    "/home/user/test.txt": {
+      "read": ["user", "root"],
+      "write": ["root"],
+      "execute": ["root"],
+      "delete": ["root"]
+    },
+    "/etc/config": {
+      "read": ["root"],
+      "write": ["root"],
+      "execute": [],
+      "delete": []
+    }
+  }
+}
