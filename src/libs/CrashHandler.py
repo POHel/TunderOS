@@ -4,14 +4,14 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional, Dict, List
-INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(INIT_DIR)
+INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) #вычисляет путь к каталогу, который находится на два уровня выше текущего файла
+sys.path.append(INIT_DIR) #перемещение в папку библиотек
 from libs.logging import Logger
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent #использует библиотеку pathlib для получения пути к каталогу, который находится на три уровня выше текущего файла
 CRASH_DIR = BASE_DIR / "data" / "crash"
 
-class TunderCrash(Exception):
+class TunderCrash(Exception): #инициализация 
     def __init__(self, code: str, message: str, category: str, details: str = ""):
         self.code = code
         self.message = message
@@ -20,6 +20,7 @@ class TunderCrash(Exception):
         super().__init__(f"[{code}] {category}: {message} {details}")
 
 class CrashHandler:
+    # перечисление всех возможных кодов и ошибок а так же присваивание к ним идентификатора кода ошибки
     ERROR_CODES = {
         "ERROR": {
             "0xA0E0ERR": "ArithmeticError - Base class for arithmetic errors",
@@ -97,17 +98,18 @@ class CrashHandler:
         },
         "FS": {
             "0xFNF0ERR": "File not found",
+            "0xPNF0ERR": "Path not found",
             "0xPDN0ERR": "Permission denied",
             "0xDNE0ERR": "Directory not empty"
         }
     }
 
-    def __init__(self, logger: Logger, kernel=None):
+    def __init__(self, logger: Logger, kernel=None): # инициализация
         self.logger = logger
         self.kernel = kernel
-        CRASH_DIR.mkdir(parents=True, exist_ok=True)
+        CRASH_DIR.mkdir(parents=True, exist_ok=True) # создание Crash директории
 
-    def raise_crash(self, category: str, code: str, details: str = ""):
+    def raise_crash(self, category: str, code: str, details: str = ""): # вызывает TunderCrash и регистрирует ошибку
         message = self.ERROR_CODES.get(category, {}).get(code, "Unknown error")
         full_message = f"{message} {category}".strip()
         if category == "WARNING":
@@ -117,10 +119,10 @@ class CrashHandler:
             self._create_crash_dump(category, code, message, details)
             raise TunderCrash(code, message, category, details)
     
-    def handle(self, exception: Exception, context: str = "", critical: bool = False):
+    def handle(self, exception: Exception, context: str = "", critical: bool = False): # обрабатывает исключения, регистрирует и создаёт дамп
         if isinstance(exception, TunderCrash):
             self.logger.error(f"[{exception.code}] {exception.category}: {exception.message} {exception.details}")
-        else:
+        else: # попытка сопоставить встроенное исключение с кодом
             exc_name = type(exception).__name__
             code = None
             category = "ERROR"
@@ -133,7 +135,7 @@ class CrashHandler:
                 if code:
                     break
             if not code:
-                code = "0xR0E0ERR"
+                code = "0xR0E0ERR" #RuntimeError как запасной вариант
                 category = "ERROR"
             message = self.ERROR_CODES[category].get(code, "Unknown error")
             full_message = f"{message}: {str(exception)} ({context})"
@@ -144,7 +146,7 @@ class CrashHandler:
                 if critical:
                     self._create_crush_dump(category, code, message, str(exception))
 
-    def warn(self, category: str, code: str, details: str = ""):
+    def warn(self, category: str, code: str, details: str = ""): # логирует предупреждения без выброса исключения
         if category != "WARNING":
             self.logger.warning(f"Invalid warning category: {category}")
             return
@@ -152,7 +154,7 @@ class CrashHandler:
         full_message = f"{message} {details}".strip()
         self.logger.warning(f"[{code}] {category}: {full_message}")
 
-    def _create_rash_dump(self, cetegory: str, code: str, message: str, details: str):
+    def _create_rash_dump(self, cetegory: str, code: str, message: str, details: str): # создаёт дамп состояния системы при сбое
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dump_file = CRASH_DIR / f"{timestamp}.json"
         dump_data = {
