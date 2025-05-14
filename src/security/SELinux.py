@@ -51,4 +51,54 @@ class SELinux:
 
 #Метод проверки доступа
     def check_access(self, path: str, operation: str, user: str, role: str) -> bool: #Определяем метод для проверки доступа к ресурсу на основе заданных параметров.
-        pass
+        if self.mode == "permissive": #Если режим SELinux установлен на "permissive", то доступ всегда предоставляется, и информация об этом записывается в лог.
+            self.logger.info(f"SELinux (permissive): {user} ({role}) requests {operation} on {path}")
+            return True
+        
+        rules = self.policies.get("rules", {}).get(path,{}) #Извлекаются правила для запрашиваемого пути.
+        allowed_subjects = rules.get(operation, []) #Если правил нет, возвращается пустой словарь. Затем извлекаются разрешенные субъекты для запрашиваемой операции (например, чтение, запись и т.д.
+
+        if user in allowed_subjects or role in allowed_subjects: #Если пользователь или его роль присутствуют в списке разрешенных субъектов, доступ предоставляется, и это записывается в лог.
+            self.logger.info(f"SELinux: Granted {operation} on {PATH} for {user} ({role})")
+            return True
+        
+        self.logger.warning(f"SELinux: Denied {operation} on {path} for {user} ({role})") #Если доступ не предоставлен, генерируется предупреждение в логах.
+        if self.mode == "enforcing": #Если режим SELinux установлен на "enforcing", вызывается обработчик сбоев, который может завершить работу программы или выполнить другие действия. Возвращается значение False, указывающее на отказ в доступе.
+            self.crash_handler.raise_crash("SELinux", "0xSAD0ERR", f"SELinux acces denied {operation} on {path} for {user}")
+            return False
+    
+    def set_mode(self, mode: str): #Метод устанавливает режим SELinux. Если переданный режим не является допустимым ("enforcing" или "permissive"), вызывается обработчик сбоев.
+        if mode not in ["enforcing", "permissive"]:
+            self.crash_handler.raise_crash("SELinux", "0xSIM0ERR", f"Invalid SELinux mode: {mode}" )
+            self.mode = mode #Если режим допустим, он сохраняется в атрибуте объекта и обновляется в политике. Затем изменения сохраняются.
+            self.politices["mode"] = mode
+            self._save_politicies(self.politices)
+            self.logger.info(f"SELinux mode changed to  {mode}") #Записывается информация о том, что режим SELinux был изменен.
+
+    def add_rule(self, path: str, operation: str, subjects: List[str]): #Метод добавляет правило для указанного пути и операции. Если операция недопустима, вызывается обработчик сбоев.
+        if operation not in ["read", "write", "execute", "delete"]:
+            self.crash_handler.raise_crash("SELinux", "0xSIO0ERR" f"Invalid operation: {operation}")
+        if path not in  self.politices["rules"]: #Если для указанного пути еще нет правил, создается новая структура для всех операций.
+            self.politices["rules"][path] = {"read": [], "write": [], "execute": [], "delete": []}
+            self.politices["rules"][path][operation] = list(set(self.politices["rules"][path][operation] + subjects)) #Субъекты добавляются к списку разрешенных для данной операции. Используется set для удаления дубликатов.
+            self._save_politicies(self.politices) #Политики сохраняются, и информация об успешном добавлении правила записывается в лог.
+            self.logger.info(f"Added SELinux rule: {operation} on {path} for {subjects}")
+
+    def remove_rule(self, path: str, operation: str, subjects: list[str]): #Метод удаляет правило для указанного пути и операции. Проверяется наличие правил.
+        if path in self.politices["rules"] and operation in self.politices["rules"][path]:
+            self.politices["rules"][path][operation] = [s for s in self.politices["rules"][path][operation] if s not in subjects] #Из списка разрешенных субъектов удаляются те, которые указаны в параметре subjects.
+            self._save_politicies(self.politices) #Политики сохраняются, и информация об успешном удалении правила записывается в лог.
+            self.logger.info(f"Removed SELinux rule: {operation} on {path} for {subjects}")
+        else: #Если правило не найдено, вызывается обработчик сбоев с соответствующим сообщением.
+            self.crash_handler.raise_crash("SELINUX", "0xSRN0ERR", f"No rule found for {operation} on {path}")
+    
+    def reset_politicies(self): #Метод сбрасывает политики к значениям по умолчанию. Режим устанавливается на "permissive", а правила определяются для корневого пути.
+        self.politices = {
+            "mode": "permissive",
+            "rules": {
+                "/": {"read": ["root", "user"], "write": ["root"], "execute": ["root"], "delete": ["root"]}
+            }
+        }
+        self._save_politicies(self.politices) #Политики сохраняются, режим устанавливается на "permissive", и информация о сбросе записывается в лог.
+        self.mode = "permissive"
+        self.logger.info("SELinux politicies reset to default")
