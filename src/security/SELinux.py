@@ -6,8 +6,8 @@ import sys
 import os
 INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(INIT_DIR)
-from src.libs.logging import Logger
-from src.libs.CrashHandler import CrashHandler, TunderCrash
+from libs.logging import Logger
+from libs.CrashHandler import CrashHandler, TunderCrash
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent #Определяем базовый путь для проекта, используя переменную file, которая должна быть определена ранее в коде. Мы переходим на три уровня вверх по директориям.
 SELinux_CONFIG = BASE_DIR / "data" / "selinux.json" #Определяем путь к файлу конфигурации SELinux в формате JSON.

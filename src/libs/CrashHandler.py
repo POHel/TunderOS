@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional, Dict, List
 INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(INIT_DIR)
-from src.libs.logging import Logger
+from libs.logging import Logger
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CRASH_DIR = BASE_DIR / "data" / "crash"
