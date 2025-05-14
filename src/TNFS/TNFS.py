@@ -76,16 +76,16 @@ class TNFS:
         self.db.commit()
         return cursor.lasrowid
     
-    def _check_primisions(self) -> bool: #проверяет права доступа
+    def _check_primisions(self, path: str, user: str, operation: str) -> bool: #проверяет права доступа
         cursor = self.db.execute("SELECT owner, perms FROM files WHERE path = ?", (path,))
         result = cursor.fetchone()
         if not result:
             self.crash_handler.raise_crash("FS", "0xPNF0ERR", f"path not found: {path}")
         owner, perms = result
-        perms_str + f"{perms:03o}"
+        perms_str = f"{perms:03o}"
         if user == owner or user == "root":
             return operation in {"read": "4", "write": "2", "execute": "1"} and perms_str[0] >= {"read": "4", "write": "2", "execute": "1"}[operation]
-        pass
+        return operation in {"read": "4", "execute": "1"} and perms_str[2] >= {"read": "4", "execute": "1"}[operation]
 
     def _log_journal(self):
         pass

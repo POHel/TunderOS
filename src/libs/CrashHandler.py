@@ -2,6 +2,8 @@
 #created by SKATT
 import os
 import sys
+import time
+import json
 from pathlib import Path
 from typing import Optional, Dict, List
 INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) #вычисляет путь к каталогу, который находится на два уровня выше текущего файла
@@ -154,7 +156,7 @@ class CrashHandler:
         full_message = f"{message} {details}".strip()
         self.logger.warning(f"[{code}] {category}: {full_message}")
 
-    def _create_rash_dump(self, cetegory: str, code: str, message: str, details: str): # создаёт дамп состояния системы при сбое
+    def _create_rash_dump(self, category: str, code: str, message: str, details: str): # создаёт дамп состояния системы при сбое
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dump_file = CRASH_DIR / f"{timestamp}.json"
         dump_data = {
