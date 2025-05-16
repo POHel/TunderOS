@@ -87,45 +87,46 @@ class TNFS:
             return operation in {"read": "4", "write": "2", "execute": "1"} and perms_str[0] >= {"read": "4", "write": "2", "execute": "1"}[operation]
         return operation in {"read": "4", "execute": "1"} and perms_str[2] >= {"read": "4", "execute": "1"}[operation]
 
-    def _log_journal(self):
-        pass
+    def _log_journal(self, ): # Логирование операций в журнал
+        self.db.execute("INSERT INFO journal (operation, path, timestamp, details)", (operation, path, time.time(), details))
+        self.db.commit()
 
 #Folders
-    def create_directory():
+    def create_directory(): # создание директорий
         pass
 
-    def remove_directory():
+    def remove_directory(): # удаление дерикторий
         pass
 
-    def rename_directory():
+    def rename_directory(): # переименование дерикторий
         pass
 
-    def copy_directory():
+    def copy_directory(): # копирование директорий
         pass
 
-    def move_directory():
+    def move_directory(): # перемещение дерикторий
         pass
 
-    def list_directory():
+    def list_directory(): # список директорий
         pass
 #Files
-    def create_file():
+    def create_file(self, path: str, content: str, owner: str = "root", perms: int = 644) -> bool: # создание файлов
         pass
 
-    def read_file():
+    def read_file(): # чтение файлов
         pass
 
-    def write_file():
+    def write_file(): # запись файлов
         pass
 
-    def remove_file():
+    def remove_file(): # удаление файлов
         pass
 
-    def rename_file():
+    def rename_file(): # переименование файлов
         pass
 
-    def copy_file():
+    def copy_file(): # копирование файлов
         pass
 
-    def move_file():
+    def move_file(): # перемещение файлов
         pass
