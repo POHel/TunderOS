@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, Dict, List
 INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) #вычисляет путь к каталогу, который находится на два уровня выше текущего файла
 sys.path.append(INIT_DIR) #перемещение в папку библиотек
-from libs.logging import Logger
+from libs.Logging import Logger
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent #использует библиотеку pathlib для получения пути к каталогу, который находится на три уровня выше текущего файла
 CRASH_DIR = BASE_DIR / "data" / "crash"

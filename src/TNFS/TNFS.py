@@ -8,7 +8,7 @@ import os
 import sys
 INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(INIT_DIR)
-from libs.logging import Logger
+from libs.Logging import Logger
 from libs.CrashHandler import CrashHandler, TunderCrash
 from core.users import UserManager
 from security.SELinux import SELinux
@@ -111,12 +111,43 @@ class TNFS:
         pass
 #Files
     def create_file(self, path: str, content: str, owner: str = "root", perms: int = 644) -> bool: # создание файлов
-        pass
+        if not self.selinux.check_access(path, "write", self.current_user, self.current_role):
+            return False
 
-    def read_file(): # чтение файлов
-        pass
+        parent_dir = os.path.dirname(path)
+        if not parent_dir:
+            parent_dir = "/"
+        if not self.db.execute("SELECT path FROM files WHERE path = ? AND type = 'directory'", (parent_dir,)).fetchone():
+            self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"No write permission for {parent_dir}")
+        if not self._check_primisions(parent_dir, self.current_user, "write"):
+            self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"Path already exists: {path}")
+        if not self.db.execute("SELECT path FROM files WHERE path = ?", (path,)).fetchone():
+            self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"Path already exists: {path}")
+        inode = self._create_inode()
+        ctime = mtime = time.time()
+        size = len(content.encode())
+        self.db.execute("INSERT INTO files VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (path, inode, content, owner, perms, "file", size, ctime, mtime))
+        self.db.commit()
+        self._log_journal("create", path, f"Created file: {path}")
+        self.logger.info(f"File created: {path}")
+        return True
 
-    def write_file(): # запись файлов
+    def read_file(self, path: str) -> Optional[str]: # чтение файлов
+        if not self.selinux.check_access(path, "read", self.current_user, self.current_role):
+            return None
+        cursor = self.db.execute("SELECT content, perms, owner FROM files WHERE path = ? AND type = 'file'", (path,))
+        result = cursor.fetchone()
+        if not result:
+            self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"File not found: {path}")
+        content, perms, owner = result
+        if not self._check_permission(path, self.current_user, "read"):
+            self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No read permission: {path}")
+        self._log_journal("read", path, f"Read file: {path}")
+        self.logger.info(f"File read: {path}")
+        return content
+
+    def write_file(self, path: str, content: str) -> bool: # запись файлов
+        
         pass
 
     def remove_file(): # удаление файлов
