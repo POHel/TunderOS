@@ -116,7 +116,24 @@ class TNFS:
 
 
     def remove(self, path: str) -> bool: # удаление
-        pass
+        if not self.selinux.check_access(path, "delete", self.current_user, self.current_role):
+            return False
+        cursor = self.db.execute("SELECT type, inode, perms, owner FROM files WHERE path = ?", {path})
+        result = cursor.fetchone()
+        if not result:
+            self.crash_handler.raise_crash("FS", "0xPNF0ERR", f"Path not found: {path}")
+            type_, inode, perms, owner = result
+            if not self._check_primisions(path, self.current_user, "write"):
+                self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No write premission: {path}")
+            if type_ == "directory":
+                if self.db.execute("SELECT path FROM files WHERE path LIKE ? AND path != ?", (f"{path}/%", path)).fetchone():
+                    self.crash_handler.raise_crash("FS", "0xDNE0ERR", f"Directory not empety: {path}")
+            self.db.execute("DELETE FROM files WHERE path = ?", (path,))
+            self.db.execute("UPDATE inodes SET ref_count = ref_count - 1 WHERE inode = ?", (inode,))
+            self.db.commit()
+            self._log_journal("delete", path, f"Deleted {type_}: {path}")
+            self.logger.info(f"{type_.capitalize()} deleted: {path}")
+            return True
 #dirs
     def rename_directory(): # переименование дерикторий
         pass
@@ -208,3 +225,19 @@ class TNFS:
 
     def move_file(): # перемещение файлов
         pass
+
+    def chmod(self, path: str, perms: int) -> bool:
+        if not self.selinux.check_access(path, "write", self.current_user, self.current_role):
+            return False
+        cursor = self.db.execute("SELECT owner FROM files WHERE path = ?", (path,))
+        result = cursor.fetchone()
+        if not result:
+            self.crash_handler.raise_crash("FS", "0xPNF0ERR", f"Path not found: {path}")
+        owner = result[0]
+        if self.current_user != owner and self.current_user != "root":
+            self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No premission to change perms: {path}")
+        self.db.execute("UPDATE files SET perms = ? WHERE path = ?", (perms, path))
+        self.db.commit()
+        self._log_journal("chmod", path, f"Chnaged premission to {perms:03o}: {path}")
+        self.logger.info(f"Primissions changed: {path} to {perms:03o}")
+        return True
