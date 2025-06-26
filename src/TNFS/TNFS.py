@@ -1,4 +1,4 @@
-#TUnderFileSystem
+#TuNderFileSystem
 #created by SKATT
 import sqlite3
 import time
@@ -8,7 +8,7 @@ import os
 import sys
 INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(INIT_DIR)
-from libs.Logging import Logger
+from libs.logging import Logger
 from libs.CrashHandler import CrashHandler, TunderCrash
 from core.users import UserManager
 from security.SELinux import SELinux
@@ -21,6 +21,7 @@ class TNFS:
         self.crash_handler = crash_handler
         self.user_manager = user_manager
         self.selinux = selinux
+        self.cache = {}
         self.db = sqlite3.connect(BASE_DIR / "data" / "tnfs.db")
         self.db.execute("CREATE TABLE IF NOT EXISTS inodes (inode INTEGER PRIMARY KEY AUTOINCREMENT, ref_count INTEGER DEFAULT 1)")
         self.db.execute("""
@@ -88,16 +89,35 @@ class TNFS:
         return operation in {"read": "4", "execute": "1"} and perms_str[2] >= {"read": "4", "execute": "1"}[operation]
 
     def _log_journal(self, ): # Логирование операций в журнал
-        self.db.execute("INSERT INFO journal (operation, path, timestamp, details)", (operation, path, time.time(), details))
+        self.db.execute("INSERT INFO journal (operation, path, timestamp, details, user) VALUES(?,?,?,?,?)", (operation, path, time.time(), details, self.current_user))
         self.db.commit()
 
 #Folders
-    def create_directory(): # создание директорий
-        pass
+    def create_directory(self, path: str, owner: str = "root", perms: int = 755) -> bool: # создание директорий
+        if not self.selinux.check_access(path, "write", self.current_user, self.current_role):
+            return False
+        parent_dir = os.path.dirname(path)
+        if not parent_dir:
+            parent_dir = "/"
+        if not self.db.execute("SELECT path FROM files WHERE path = ? AND type = 'directory'", (parent_dir,)).fetchone():
+            self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"Parent directory not found: {parent_dir}")
+        if not self._check_primisions(parent_dir, self.current_user, "write"):
+            self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No write premission for: {parent_dir}")
+        if self.db.execute("SELECT path FROM files WHERE path = ?", (path,)).fetchone():
+            self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"Path already exists: {path}")
+        inode = self._create_inode()
+        ctime = mtime = time.time()
+        self.db.execute("INSERT INTO files VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)", (path, inode, "", owner, perms, "directory", 0, ctime, mtime))
+        self.db.commit()
+        self._log_journal("create", path, f"Created directory: {path}")
+        self.logger.info(f"Directory created: {path}")
+        return True
+        
 
-    def remove_directory(): # удаление дерикторий
-        pass
 
+    def remove(self, path: str) -> bool: # удаление
+        pass
+#dirs
     def rename_directory(): # переименование дерикторий
         pass
 
@@ -107,13 +127,25 @@ class TNFS:
     def move_directory(): # перемещение дерикторий
         pass
 
-    def list_directory(): # список директорий
-        pass
+    def list_directory(self, path: str) -> List[str]: # список директорий
+        if not self.selinux.check_access(path, "read", self.current_user, self.current_role):
+            return []
+        if not self.db.execute("SELECT path FROM files WHERE path = ? AND type = 'directory'", {path,}).fetchone():
+            self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"Directory not found: {path}")
+        if not self._check_primisions(path, self.current_user, "read"):
+            self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No read premission: {path}")
+        if not path.endswith("/"):
+            path += "/"
+        cursor = self.db.execute("SELECT path FROM files WHERE path LIKE ? AND path != ?", (f"{path}%", path))
+        files = [os.path.basename(row[0]) for row in cursor.fetchall()]
+        self._log_journal("list", path, f"Listed directory: {path}")
+        self.logger.info(f"Directory listed: {path}")
+        return files
+        
 #Files
     def create_file(self, path: str, content: str, owner: str = "root", perms: int = 644) -> bool: # создание файлов
         if not self.selinux.check_access(path, "write", self.current_user, self.current_role):
             return False
-
         parent_dir = os.path.dirname(path)
         if not parent_dir:
             parent_dir = "/"
@@ -133,6 +165,10 @@ class TNFS:
         return True
 
     def read_file(self, path: str) -> Optional[str]: # чтение файлов
+        if path in self.cache:
+            return self.cache[path]
+        content = self._read_read_file_db(path)
+        self.cache[path] = content
         if not self.selinux.check_access(path, "read", self.current_user, self.current_role):
             return None
         cursor = self.db.execute("SELECT content, perms, owner FROM files WHERE path = ? AND type = 'file'", (path,))
@@ -147,11 +183,22 @@ class TNFS:
         return content
 
     def write_file(self, path: str, content: str) -> bool: # запись файлов
-        
-        pass
-
-    def remove_file(): # удаление файлов
-        pass
+        if not self.selinux.check_access(path, "write", self.current_user, self.current_role):
+            return False
+        cursor = self.db.excute("SELECT perms, owner FROM files WHERE path = & AND type = 'file'", (path,))
+        result = cursor.fetchone()
+        if not result:
+            self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"File not found: {path}")
+        perms, owner = result
+        if not self._check_primisions(path, self.current_user, "write"):
+            self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No write premission: {path}")
+        mtime = time.time()
+        size = len(content.encode())
+        self.db.execute("UPDATE files SET content = ?, mtime = ? WHERE path = ?", (content, size, mtime, path))
+        self.db.commit()
+        self._log_journal("write", path, f"Wrote to file: {path}")
+        self.logger.info(f"File written: {path}")
+        return True
 
     def rename_file(): # переименование файлов
         pass
