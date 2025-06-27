@@ -6,14 +6,14 @@ import time
 import json
 from pathlib import Path
 from typing import Optional, Dict, List
-INIT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) #вычисляет путь к каталогу, который находится на два уровня выше текущего файла
-sys.path.append(INIT_DIR) #перемещение в папку библиотек
-from libs.logging import Logger
+INIT_DIR = Path(__file__).resolve().parent
+sys.path.append(str(INIT_DIR))
+from src.libs.logging import Logger
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent #использует библиотеку pathlib для получения пути к каталогу, который находится на три уровня выше текущего файла
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CRASH_DIR = BASE_DIR / "data" / "crash"
 
-class TunderCrash(Exception): #инициализация 
+class TunderCrash(Exception):
     def __init__(self, code: str, message: str, category: str, details: str = ""):
         self.code = code
         self.message = message
@@ -22,7 +22,6 @@ class TunderCrash(Exception): #инициализация
         super().__init__(f"[{code}] {category}: {message} {details}")
 
 class CrashHandler:
-    # перечисление всех возможных кодов и ошибок а так же присваивание к ним идентификатора кода ошибки
     ERROR_CODES = {
         "ERROR": {
             "0xA0E0ERR": "ArithmeticError - Base class for arithmetic errors",
@@ -72,8 +71,8 @@ class CrashHandler:
             "0xR0W0WRN": "ResourceWarning - Resource usage issue",
             "0xS0W0WRN": "SyntaxWarning - Suspicious syntax",
             "0xU0W0WRN": "UnicodeWarning - Unicode-related warning",
-            "0xR0W0WRN": "RuntimeWarning - Suspicious runtime behavior",
-            "0xU0W0WRN": "UserWarning - User-defined warning"
+            "0xV0W0WRN": "RuntimeWarning - Suspicious runtime behavior",
+            "0xX0W0WRN": "UserWarning - User-defined warning"
         },
         "SYSTEM": {
             "0xG0X0EXT": "GeneratorExit - Generator closed unexpectedly",
@@ -106,12 +105,13 @@ class CrashHandler:
         }
     }
 
-    def __init__(self, logger: Logger, kernel=None): # инициализация
+    def __init__(self, logger: Logger, kernel=None):
         self.logger = logger
         self.kernel = kernel
-        CRASH_DIR.mkdir(parents=True, exist_ok=True) # создание Crash директории
+        self._handling_error = False  # Флаг для предотвращения рекурсии
+        CRASH_DIR.mkdir(parents=True, exist_ok=True)
 
-    def raise_crash(self, category: str, code: str, details: str = ""): # вызывает TunderCrash и регистрирует ошибку
+    def raise_crash(self, category: str, code: str, details: str = ""):
         message = self.ERROR_CODES.get(category, {}).get(code, "Unknown error")
         full_message = f"{message} {category}".strip()
         if category == "WARNING":
@@ -120,35 +120,39 @@ class CrashHandler:
             self.logger.error(f"[{code}] {category}: {full_message}")
             self._create_crash_dump(category, code, message, details)
             raise TunderCrash(code, message, category, details)
-    
-    def handle(self, exception: Exception, context: str = "", critical: bool = False): # обрабатывает исключения, регистрирует и создаёт дамп
-        if isinstance(exception, TunderCrash):
-            self.logger.error(f"[{exception.code}] {exception.category}: {exception.message} {exception.details}")
-        else: # попытка сопоставить встроенное исключение с кодом
-            exc_name = type(exception).__name__
-            code = None
-            category = "ERROR"
-            for cat, codes in self.ERROR_CODES.items():
-                for c, msg in codes.items():
-                    if msg.startswitch(exc_name):
-                        code = c
-                        category = cat
-                        break
-                if code:
-                    break
-            if not code:
-                code = "0xR0E0ERR" #RuntimeError как запасной вариант
-                category = "ERROR"
-            message = self.ERROR_CODES[category].get(code, "Unknown error")
-            full_message = f"{message}: {str(exception)} ({context})"
-            if category == "WARNING":
-                self.logger.warning(f"[{code}] {category}: {full_message}")
+
+    def handle(self, exception: Exception, context: str = "", critical: bool = False):
+        if self._handling_error:
+            self.logger.error(f"Recursive error detected in {context}: {str(exception)}")
+            return
+        self._handling_error = True
+        try:
+            if isinstance(exception, TunderCrash):
+                self.logger.error(f"[{exception.code}] {exception.category}: {exception.message} {exception.details}")
             else:
+                exc_name = type(exception).__name__
+                code = None
+                category = "ERROR"
+                for cat, codes in self.ERROR_CODES.items():
+                    for c, msg in codes.items():
+                        if msg.startswith(exc_name):
+                            code = c
+                            category = cat
+                            break
+                    if code:
+                        break
+                if not code:
+                    code = "0xX0E0ERR"  # RuntimeError как запасной вариант
+                    category = "ERROR"
+                message = self.ERROR_CODES[category].get(code, "Unknown error")
+                full_message = f"{message}: {str(exception)} ({context})"
                 self.logger.error(f"[{code}] {category}: {full_message}")
                 if critical:
-                    self._create_crush_dump(category, code, message, str(exception))
+                    self._create_crash_dump(category, code, message, str(exception))
+        finally:
+            self._handling_error = False
 
-    def warn(self, category: str, code: str, details: str = ""): # логирует предупреждения без выброса исключения
+    def warn(self, category: str, code: str, details: str = ""):
         if category != "WARNING":
             self.logger.warning(f"Invalid warning category: {category}")
             return
@@ -156,7 +160,7 @@ class CrashHandler:
         full_message = f"{message} {details}".strip()
         self.logger.warning(f"[{code}] {category}: {full_message}")
 
-    def _create_rash_dump(self, category: str, code: str, message: str, details: str): # создаёт дамп состояния системы при сбое
+    def _create_crash_dump(self, category: str, code: str, message: str, details: str):
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         dump_file = CRASH_DIR / f"{timestamp}.json"
         dump_data = {
@@ -171,8 +175,7 @@ class CrashHandler:
                 {"pid": pid, "name": proc["name"], "state": proc["state"]}
                 for pid, proc in getattr(self.kernel, "processes", {}).items()
             ],
-            "memory": getattr(self.kernel, "memory", {}),
-            "tnfs_state": self.kernel.tnsf.list_dir("/") if self.kernel else []
+            "memory": getattr(self.kernel, "memory", {})
         }
         try:
             with open(dump_file, "w", encoding="utf-8") as f:
