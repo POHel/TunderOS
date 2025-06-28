@@ -64,7 +64,7 @@ class UserManager:
         if self.tnfs:
             self.tnfs.current_user = username
             self.tnfs.current_role = result[1]
-        self.logger.info(f"User {username} logged in (session {self.current_session_id})")
+        self.logger.info(f"User: {username} logged in (session {self.current_session_id})")
         return True
 
     def logout(self, session_id: int) -> bool:
@@ -75,8 +75,8 @@ class UserManager:
         if session_id == self.current_session_id:
             self.current_session_id = None
             if self.tnfs:
-                self.tnfs.current_user = "root"
-                self.tnfs.current_role = "root"
+                self.tnfs.current_user = "user"
+                self.tnfs.current_role = "user"
         self.logger.info(f"Session {session_id} logged out")
         return True
 

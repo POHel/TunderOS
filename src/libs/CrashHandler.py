@@ -102,6 +102,11 @@ class CrashHandler:
             "0xPNF0ERR": "Path not found",
             "0xPDN0ERR": "Permission denied",
             "0xDNE0ERR": "Directory not empty"
+        },
+        "SHELL": {
+            "0xS0UNF0ERR": "User not found",
+            "0xS0PI0ERR": "Password Incorrect",
+            "0xS0AUTHERR": "The number of authorization attempts has been exceeded"
         }
     }
 

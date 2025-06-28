@@ -53,8 +53,8 @@ class TNFS:
             self.logger.info("Added 'user' column to journal table")
         except sqlite3.OperationalError:
             pass
-        self.current_user = "root"
-        self.current_role = "root"
+        self.current_user = "user"
+        self.current_role = "user"
         self.init_default_structure()
         self.logger.info("Tunder File System initialized")
 
@@ -78,11 +78,11 @@ class TNFS:
                 )
                 self._log_journal("create", path, f"Created {type_}: {path}")
         self.db.commit()
-        self.logger.debug("Default TNFS structure committed to database")
+        self.logger.info("Default TNFS structure committed to database")
         cursor = self.db.execute("SELECT path, perms FROM files WHERE path = '/'")
         result = cursor.fetchone()
         if result:
-            self.logger.debug(f"Confirmed / exists in database with perms={oct(result[1])}")
+            self.logger.info(f"Confirmed / exists in database with perms={oct(result[1])}")
         else:
             self.logger.error("Failed to confirm / in database")
         self.logger.info("Default TNFS structure initialized")
@@ -92,7 +92,7 @@ class TNFS:
         with self.db:
             cursor = self.db.execute("INSERT INTO inodes (ref_count) VALUES (1)")
             inode = cursor.lastrowid
-            self.logger.debug(f"Created inode: {inode}")
+            self.logger.info(f"Created inode: {inode}")
             return inode
 
     def _check_permissions(self, path: str, user: str, operation: str) -> bool:
@@ -103,7 +103,7 @@ class TNFS:
             if not result:
                 self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"Path not found: {path}")
             owner, perms = result
-            self.logger.debug(f"Checking permissions: path={path}, user={user}, operation={operation}, owner={owner}, perms={oct(perms)}")
+            self.logger.info(f"Checking permissions: path={path}, user={user}, operation={operation}, owner={owner}, perms={oct(perms)}")
             # Права в восьмеричной системе: owner (u), group (g), others (o)
             owner_perms = (perms >> 6) & 0o7  # Права владельца
             other_perms = perms & 0o7  # Права для остальных
@@ -112,9 +112,9 @@ class TNFS:
             if not required_bit:
                 self.crash_handler.raise_crash("FS", "0xV0E0ERR", f"Invalid operation: {operation}")
             if user == owner or user == "root":
-                self.logger.debug(f"User is owner or root, checking owner perms: {oct(owner_perms)} & {oct(required_bit)}")
+                self.logger.info(f"User is owner or root, checking owner perms: {oct(owner_perms)} & {oct(required_bit)}")
                 return (owner_perms & required_bit) == required_bit
-            self.logger.debug(f"User is not owner, checking other perms: {oct(other_perms)} & {oct(required_bit)}")
+            self.logger.info(f"User is not owner, checking other perms: {oct(other_perms)} & {oct(required_bit)}")
             return operation in ["read", "execute"] and (other_perms & required_bit) == required_bit
 
     def _log_journal(self, operation: str, path: str, details: str):
@@ -127,7 +127,7 @@ class TNFS:
 
     def create_directory(self, path: str, owner: str = "root", perms: int = 0o755) -> bool:
         """Создает директорию."""
-        self.logger.debug(f"Creating directory: {path}")
+        self.logger.info(f"Creating directory: {path}")
         if not self.selinux.check_access(path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied write on {path} for {self.current_user} ({self.current_role})")
         parent_dir = os.path.dirname(path) or "/"
@@ -151,7 +151,7 @@ class TNFS:
 
     def remove(self, path: str) -> bool:
         """Удаляет файл или директорию."""
-        self.logger.debug(f"Removing path: {path}")
+        self.logger.info(f"Removing path: {path}")
         if not self.selinux.check_access(path, "delete", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied delete on {path} for {self.current_user} ({self.current_role})")
         with self.db:
@@ -175,7 +175,7 @@ class TNFS:
 
     def rename_directory(self, old_path: str, new_path: str) -> bool:
         """Переименовывает директорию."""
-        self.logger.debug(f"Renaming directory: {old_path} to {new_path}")
+        self.logger.info(f"Renaming directory: {old_path} to {new_path}")
         if not self.selinux.check_access(old_path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied write on {old_path} for {self.current_user} ({self.current_role})")
         if not self.selinux.check_access(new_path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
@@ -204,7 +204,7 @@ class TNFS:
 
     def copy_directory(self, src_path: str, dst_path: str) -> bool:
         """Копирует директорию и ее содержимое."""
-        self.logger.debug(f"Copying directory: {src_path} to {dst_path}")
+        self.logger.info(f"Copying directory: {src_path} to {dst_path}")
         if not self.selinux.check_access(src_path, "read", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied read on {src_path} for {self.current_user} ({self.current_role})")
         if not self.selinux.check_access(dst_path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
@@ -253,7 +253,7 @@ class TNFS:
 
     def list_directory(self, path: str) -> List[str]:
         """Возвращает список содержимого директории."""
-        self.logger.debug(f"Listing directory: {path}")
+        self.logger.info(f"Listing directory: {path}")
         if not self.selinux.check_access(path, "read", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied read on {path} for {self.current_user} ({self.current_role})")
         with self.db:
@@ -278,27 +278,27 @@ class TNFS:
 
     def create_file(self, path: str, content: str, owner: str = "root", perms: int = 0o644) -> bool:
         """Создает файл."""
-        self.logger.debug(f"Attempting to create file: {path}")
-        self.logger.debug(f"Current user: {self.current_user}, role: {self.current_role}, session_id: {self.user_manager.current_session_id}")
+        self.logger.info(f"Attempting to create file: {path}")
+        self.logger.info(f"Current user: {self.current_user}, role: {self.current_role}, session_id: {self.user_manager.current_session_id}")
         if not path or not isinstance(path, str):
             self.crash_handler.raise_crash("FS", "0xV0E0ERR", f"Invalid path: {path}")
         try:
             if not self.selinux.check_access(path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
-                self.logger.debug(f"SELinux denied write access to {path}")
+                self.logger.info(f"SELinux denied write access to {path}")
                 self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied write on {path} for {self.current_user} ({self.current_role})")
         except TunderCrash as e:
             self.logger.error(f"SELinux check failed: {str(e)}")
             raise
         parent_dir = os.path.dirname(path) or "/"
-        self.logger.debug(f"Checking parent directory: {parent_dir}")
+        self.logger.info(f"Checking parent directory: {parent_dir}")
         with self.db:
             cursor = self.db.execute("SELECT path FROM files WHERE path = ? AND type = 'directory'", (parent_dir,))
             if not cursor.fetchone():
                 self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"Parent directory not found: {parent_dir}")
-            self.logger.debug(f"Parent directory {parent_dir} exists")
+            self.logger.info(f"Parent directory {parent_dir} exists")
             if not self._check_permissions(parent_dir, self.current_user, "write"):
                 self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No write permission for {parent_dir}")
-            self.logger.debug(f"Write permission granted for {parent_dir}")
+            self.logger.info(f"Write permission granted for {parent_dir}")
             if self.db.execute("SELECT path FROM files WHERE path = ?", (path,)).fetchone():
                 self.crash_handler.raise_crash("FS", "0xV0E0ERR", f"Path already exists: {path}")
             inode = self._create_inode()
@@ -309,10 +309,10 @@ class TNFS:
                 (path, inode, content, owner, perms, "file", size, ctime, mtime)
             )
             self.db.commit()
-            self.logger.debug(f"Inserted file into database: {path}, inode: {inode}, size: {size}")
+            self.logger.info(f"Inserted file into database: {path}, inode: {inode}, size: {size}")
             cursor = self.db.execute("SELECT path FROM files WHERE path = ?", (path,))
             if cursor.fetchone():
-                self.logger.debug(f"Confirmed file exists in database: {path}")
+                self.logger.info(f"Confirmed file exists in database: {path}")
             else:
                 self.logger.error(f"Failed to confirm file creation: {path}")
                 self.crash_handler.raise_crash("FS", "0xFNF0ERR", f"Failed to create file: {path}")
@@ -322,7 +322,7 @@ class TNFS:
 
     def read_file(self, path: str) -> Optional[str]:
         """Читает содержимое файла."""
-        self.logger.debug(f"Reading file: {path}")
+        self.logger.info(f"Reading file: {path}")
         if path in self.cache:
             if not self._check_permissions(path, self.current_user, "read"):
                 self.crash_handler.raise_crash("FS", "0xPDN0ERR", f"No read permission: {path}")
@@ -348,7 +348,7 @@ class TNFS:
 
     def write_file(self, path: str, content: str) -> bool:
         """Пишет в файл."""
-        self.logger.debug(f"Writing to file: {path}")
+        self.logger.info(f"Writing to file: {path}")
         if not self.selinux.check_access(path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied write on {path} for {self.current_user} ({self.current_role})")
         with self.db:
@@ -371,7 +371,7 @@ class TNFS:
 
     def rename_file(self, old_path: str, new_path: str) -> bool:
         """Переименовывает файл."""
-        self.logger.debug(f"Renaming file: {old_path} to {new_path}")
+        self.logger.info(f"Renaming file: {old_path} to {new_path}")
         if not self.selinux.check_access(old_path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied write on {old_path} for {self.current_user} ({self.current_role})")
         if not self.selinux.check_access(new_path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
@@ -400,7 +400,7 @@ class TNFS:
 
     def copy_file(self, src_path: str, dst_path: str) -> bool:
         """Копирует файл."""
-        self.logger.debug(f"Copying file: {src_path} to {dst_path}")
+        self.logger.info(f"Copying file: {src_path} to {dst_path}")
         if not self.selinux.check_access(src_path, "read", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied read on {src_path} for {self.current_user} ({self.current_role})")
         if not self.selinux.check_access(dst_path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
@@ -442,7 +442,7 @@ class TNFS:
 
     def chmod(self, path: str, perms: int) -> bool:
         """Изменяет права доступа."""
-        self.logger.debug(f"Changing permissions: {path} to {oct(perms)}")
+        self.logger.info(f"Changing permissions: {path} to {oct(perms)}")
         if not self.selinux.check_access(path, "write", self.current_user, self.current_role, self.user_manager.current_session_id):
             self.crash_handler.raise_crash("FS", "0xSAD0ERR", f"SELinux: Denied write on {path} for {self.current_user} ({self.current_role})")
         with self.db:

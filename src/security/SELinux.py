@@ -39,7 +39,7 @@ class SELinux:
         self.policies = {
             "mode": "enforcing",
             "rules": {
-                "/": {"read": ["root", "user"], "write": ["root", "user"], "execute": ["root", "user"], "delete": ["root", "user"], "type": "directory"},
+                "/": {"read": ["root"], "write": ["root"], "execute": ["root"], "delete": ["root"], "type": "directory"},
                 "/home": {"read": ["root", "user"], "write": ["root", "user"], "execute": ["root", "user"], "delete": ["root"], "type": "directory"},
                 "/etc": {"read": ["root"], "write": ["root"], "execute": ["root"], "delete": ["root"], "type": "directory"},
                 "/bin": {"read": ["root", "user", "guest"], "write": ["root"], "execute": ["root", "user", "guest"], "delete": ["root"], "type": "directory"},
@@ -56,7 +56,7 @@ class SELinux:
         self.mode = self.policies["mode"]
         self.db.commit()
         self.logger.info("Loaded SELinux policies")
-        self.logger.debug(f"Initial policies: {self.policies}")
+        #self.logger.debug(f"Initial policies: {self.policies}")
         self.logger.info(f"SELinux initialized in {self.mode} mode")
 
     def set_mode(self, mode: str):
@@ -72,7 +72,7 @@ class SELinux:
 
     def check_access(self, path: str, operation: str, username: str, role: str, session_id: int) -> bool:
         """Проверяет доступ к пути на основе SELinux-политик."""
-        self.logger.debug(f"Checking SELinux access: path={path}, operation={operation}, username={username}, role={role}, session_id={session_id}")
+        self.logger.info(f"Checking SELinux access: path={path}, operation={operation}, username={username}, role={role}, session_id={session_id}")
         
         if operation != "write" and self.tnfs:
             with self.tnfs.db:
@@ -95,7 +95,7 @@ class SELinux:
                 elif role == "root":
                     result = True
 
-        self.logger.debug(
+        self.logger.info(
             f"SELinux policy check for {path}/{operation}: result={result}, "
             f"policies={self.policies['rules'].get(path, self.policies['rules'].get(parent_dir, {}))}"
         )
@@ -118,13 +118,13 @@ class SELinux:
 
     def add_rule(self, path: str, operation: str, roles: List[str], type_: str):
         """Добавляет новое правило SELinux."""
-        self.logger.debug(f"Adding SELinux rule: path={path}, operation={operation}, roles={roles}, type={type_}")
+        self.logger.info(f"Adding SELinux rule: path={path}, operation={operation}, roles={roles}, type={type_}")
         if self.tnfs:
             with self.tnfs.db:
                 cursor = self.tnfs.db.execute("SELECT type FROM files WHERE path = ?", (path,))
                 result = cursor.fetchone()
                 if not result and path not in self.policies["rules"]:
-                    self.logger.debug(f"Path {path} not found in TNFS, allowing rule addition for future file")
+                    self.logger.info(f"Path {path} not found in TNFS, allowing rule addition for future file")
         if path not in self.policies["rules"]:
             self.policies["rules"][path] = {"read": [], "write": [], "execute": [], "delete": [], "type": type_}
         if operation not in self.policies["rules"][path]:
@@ -134,12 +134,12 @@ class SELinux:
         with open(BASE_DIR / "data" / "selinux_policies.json", "w") as f:
             json.dump(self.policies, f, indent=2)
         self.db.commit()
-        self.logger.debug(f"Updated policies: {self.policies['rules'][path]}")
+        self.logger.info(f"Updated policies: {self.policies['rules'][path]}")
         self.logger.info(f"Added SELinux rule: {operation} on {path} for roles {roles}")
 
     def remove_rule(self, path: str, operation: str, roles: List[str]):
         """Удаляет правило SELinux."""
-        self.logger.debug(f"Removing SELinux rule: path={path}, operation={operation}, roles={roles}")
+        self.logger.info(f"Removing SELinux rule: path={path}, operation={operation}, roles={roles}")
         if path not in self.policies["rules"] or operation not in self.policies["rules"][path]:
             self.crash_handler.raise_crash("SELINUX", "0xSRN0ERR", f"No rule found for {operation} on {path}")
         self.policies["rules"][path][operation] = [r for r in self.policies["rules"][path][operation] if r not in roles]
@@ -174,3 +174,32 @@ class SELinux:
             json.dump(self.policies, f, indent=2)
         self.db.commit()
         self.logger.info("SELinux policies reset to default")
+
+    def get_audit_logs(self) -> List[Dict]:
+        try:
+            with sqlite3.connect(BASE_DIR / "data" / "selinux.db", timeout=10) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, timestamp, username, role, session_id, path, operation, result, mode
+                    FROM selinux_audit
+                    ORDER BY timestamp DESC
+                """)
+                logs = [
+                    {
+                        "id": row[0],
+                        "timestamp": row[1],
+                        "username": row[2],
+                        "role": row[3],
+                        "session_id": row[4],
+                        "path": row[5],
+                        "operation": row[6],
+                        "result": row[7],
+                        "mode": row[8],
+                    }
+                    for row in cursor.fetchall()
+                ]
+                self.logger.info("Retrieved SELinux audit logs")
+                return logs
+        except Exception as e:
+            self.crash_handler.handle(e, "Failed to retrieve SELinux audit logs")
+            return []

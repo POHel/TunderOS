@@ -1,6 +1,7 @@
 import os
 import sys
 import html
+import sqlite3
 from pathlib import Path
 from typing import List
 from prompt_toolkit import PromptSession, print_formatted_text, HTML
@@ -13,6 +14,8 @@ from src.libs.logging import Logger
 from src.TNFS.TNFS import TNFS
 from src.libs.CrashHandler import CrashHandler, TunderCrash
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 class Shell:
     COMMANDS = {
         "L.mktxt": "Create a new text file at the specified path. Usage: L.mktxt <path>",
@@ -22,23 +25,24 @@ class Shell:
         "L.rename": "!!!DEV!!!Rename a file or directory. Usage: L.rename <old_path> <new_path>",
         "L.copy": "!!!DEV!!!Copy a file or directory. Usage: L.copy <src_path> <dst_path>",
         "L.move": "!!!DEV!!!Move a file or directory. Usage: L.move <src_path> <dst_path>",
-        "cat": "!!!ERROR!!!Display the contents of a file. Usage: cat <path>",
-        "ls": "!!!ERROR!!!List contents of a directory. Usage: ls [path] (defaults to /)",
-        "adduser": "!!!ERROR!!!Add a new user. Usage: adduser <username> <password> [role] (default role: user)",
-        "deluser": "!!!ERROR!!!Delete a user. Usage: deluser <username>",
-        "passwd": "!!!ERROR!!!Change user password. Usage: passwd <username> <old_password> <new_password>",
+        "cat": "Display the contents of a file. Usage: cat <path>",
+        "ls": "List contents of a directory. Usage: ls [path] (defaults to /)",
+        "adduser": "Add a new user. Usage: adduser <username> <password> [role] (default role: user)",
+        "deluser": "Delete a user. Usage: deluser <username>",
+        "passwd": "Change user password. Usage: passwd <username> <old_password> <new_password>",
         "login": "Log in as a user. Usage: login <username> <password>",
         "logout": "Log out the current user. Usage: logout",
         "who": "Show active user sessions. Usage: who",
         "whoami": "Show current user and session info. Usage: whoami",
         "SEL": "Set SELinux mode. Usage: SEL <enforcing/permissive>",
-        "addrule": "!!!ERROR!!!Add an SELinux rule. Usage: addrule <path> <operation> <type> <subjects...>",
-        "rmrule": "!!!ERROR!!!Remove an SELinux rule. Usage: rmrule <path> <operation> <subjects...>",
+        "addrule": "Add an SELinux rule. Usage: addrule <path> <operation> <type> <subjects...>",
+        "rmrule": "Remove an SELinux rule. Usage: rmrule <path> <operation> <subjects...>",
         "listrules": "List all SELinux rules. Usage: listrules",
         "resetSEL": "Reset SELinux policies to default. Usage: resetSEL",
         "L.warn": "Trigger a test warning. Usage: L.warn",
-        "auditlogs": "!!!ERROR!!!Display SELinux audit logs. Usage: auditlogs",
+        "auditlogs": "Display SELinux audit logs. Usage: auditlogs",
         "exit": "Exit the shell. Usage: exit",
+        "su": "Login as root user(su - super user)",
         "help": "Show this help message or details for a specific command. Usage: help [command]"
     }
 
@@ -49,11 +53,86 @@ class Shell:
         self.tnfs = tnfs
         self.bindings = KeyBindings()
         self.bindings.add(Keys.ControlC)(self._handle_ctrl_c)
-        self.kernel.login("root", "root")
-        self.tnfs.current_user = "root"
-        self.tnfs.current_role = "root"
+        self._auth()
         self.session = PromptSession(f"~{self.tnfs.current_user}--> ", key_bindings=self.bindings)
-        self.logger.info("Shell initialized")
+        self.logger.info("Shell-->Shell initialized")
+
+    def _update_console(self):
+        self.session = PromptSession(f"~{self.tnfs.current_user}--> ", key_bindings=self.bindings)
+    def _sudo(self):
+        try:
+            self.db = sqlite3.connect(BASE_DIR / "data" / "users.db", timeout=10)
+            cursor = self.db.cursor()
+        except Exception as e:
+            self.crash_handler.handle(e, "Rooting user on Shell")
+            return
+        else:
+            self.logger.info("Connected to users.db from SQLite")
+        cursor.execute("SELECT * FROM users")
+        all_users = cursor.fetchall()
+        cursor.close()
+        max_attempts = 3
+        attempt = 0
+        while attempt < max_attempts:
+            su = "root"
+            user_record = None
+            for row in all_users:
+                if row[0] == "root":
+                    user_record = row
+                    break
+            if user_record:
+                passwd = input(f"Пароль для {su}: ").strip()
+                if passwd == user_record[1]:
+                    self.kernel.login(su, passwd)
+                    self.tnfs.current_user = su
+                    self.tnfs.current_role = user_record[2]
+                    self.logger.info(f"Root active--> USER: {su} | ROLE: {user_record[2]}")
+                    return
+                else:
+                    self.logger.warning(f"Неверный пароль для пользователя: {su}")
+            else:
+                self.logger.warning(f"Пользователь {su} не найден в базе данных.")
+            attempt += 1
+            print(f"Попыток осталось: {max_attempts - attempt}")
+        self.crash_handler.raise_crash("SHELL", "0xS0AUTHERR", "Превышено число попыток авторизации.")
+        sys.exit(1)
+    def _auth(self):
+        try:
+            self.db = sqlite3.connect(BASE_DIR / "data" / "users.db", timeout=10)
+            cursor = self.db.cursor()
+        except Exception as e:
+            self.crash_handler.handle(e, "Shell Initialize database")
+            return
+        else:
+            self.logger.info("Connected to users.db from SQLite")
+        cursor.execute("SELECT * FROM users")
+        all_users = cursor.fetchall()
+        cursor.close()
+        max_attempts = 3
+        attempt = 0
+        while attempt < max_attempts:
+            user = input("Авторизация (введите имя пользователя): ").strip()
+            user_record = None
+            for row in all_users:
+                if row[0] == user:
+                    user_record = row
+                    break
+            if user_record:
+                passwd = input(f"Пароль для {user}: ").strip()
+                if passwd == user_record[1]:
+                    self.kernel.login(user, passwd)
+                    self.tnfs.current_user = user
+                    self.tnfs.current_role = user_record[2]
+                    self.logger.info(f"Успешная авторизация --> Пользователь: {user} | Роль: {user_record[2]}")
+                    return
+                else:
+                    self.logger.warning(f"Неверный пароль для пользователя: {user}")
+            else:
+                self.logger.warning(f"Пользователь {user} не найден в базе данных.")
+            attempt += 1
+            print(f"Попыток осталось: {max_attempts - attempt}")
+        self.crash_handler.raise_crash("SHELL", "0xS0AUTHERR", "Превышено число попыток авторизации.")
+        sys.exit(1)
 
     def _handle_ctrl_c(self, event):
         print_formatted_text(HTML("<ansired>\r\nKeyboardInterrupt: Exiting shell</ansired>\r\n"))
@@ -90,7 +169,7 @@ class Shell:
                     continue
                 command = parts[0]
                 args = parts[1:]
-                self.logger.debug(f"Executing command: {command} with args: {args}")
+                self.logger.info(f"Executing command: {command} with args: {args}")
 
                 if command == "help":
                     self._help(args)
@@ -100,14 +179,14 @@ class Shell:
                     print_formatted_text(HTML("\n".join(f"<ansiyellow>{html.escape(f)}</ansiyellow>" for f in files)))
                 elif command == "cat":
                     if not args:
-                        print_formatted_text(HTML("<ansired>Usage: cat <path></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: cat <path>')}</ansired>"))
                     else:
                         content = self.kernel.read_file(args[0])
                         if content:
                             print_formatted_text(HTML(f"<ansiyellow>{html.escape(content)}</ansiyellow>"))
                 elif command == "L.mktxt":
                     if len(args) < 1:
-                        print_formatted_text(HTML("<ansired>Usage: L.mktxt <path></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: L.mktxt <path>')}</ansired>"))
                     else:
                         print_formatted_text(HTML("<b>Content--> </b>"))
                         content = input()
@@ -115,13 +194,13 @@ class Shell:
                         print_formatted_text(HTML(f"<ansigreen>File created: {args[0]}</ansigreen>"))
                 elif command == "L.mkdir":
                     if not args:
-                        print_formatted_text(HTML("<ansired>Usage: L.mkdir <path></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: L.mkdir <path>')}</ansired>"))
                     else:
                         self.kernel.create_directory(args[0])
                         print_formatted_text(HTML(f"<ansigreen>Directory created: {args[0]}</ansigreen>"))
                 elif command == "L.rm":
                     if not args:
-                        print_formatted_text(HTML("<ansired>Usage: L.rm <path></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: L.rm <path>')}</ansired>"))
                     else:
                         self.kernel.remove(args[0])
                         print_formatted_text(HTML(f"<ansigreen>Path removed: {args[0]}</ansigreen>"))
@@ -137,7 +216,7 @@ class Shell:
                             self.crash_handler.raise_crash("Shell", "0xV0E0ERR", f"Invalid permissions: {args[1]}")
                 elif command == "adduser":
                     if len(args) < 2:
-                        print_formatted_text(HTML("<ansired>Usage: adduser <username> <password> [role]</ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: adduser <username> <password> [role]')}</ansired>"))
                     else:
                         username = args[0]
                         password = args[1]
@@ -146,7 +225,7 @@ class Shell:
                         print_formatted_text(HTML(f"<ansigreen>User {html.escape(username)} added</ansigreen>"))
                 elif command == "deluser":
                     if not args:
-                        print_formatted_text(HTML("<ansired>Usage: deluser <username></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: deluser <username>')}</ansired>"))
                     else:
                         self.kernel.delete_user(args[0])
                         print_formatted_text(HTML(f"<ansigreen>User {html.escape(args[0])} deleted</ansigreen>"))
@@ -165,7 +244,7 @@ class Shell:
                             print_formatted_text(HTML("<ansired>Login failed</ansired>"))
                 elif command == "passwd":
                     if len(args) < 1:
-                        print_formatted_text(HTML("<ansired>Usage: passwd <username></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: passwd <username>')}</ansired>"))
                     else:
                         old_password = input("Old password: ")
                         new_password = input("New password: ")
@@ -189,13 +268,13 @@ class Shell:
                         print_formatted_text(HTML("<ansired>No active session</ansired>"))
                     else:
                         self.kernel.logout(self.kernel.user_manager.current_session_id)
-                        self.tnfs.current_user = "root"
-                        self.tnfs.current_role = "root"
+                        self.tnfs.current_user = "user"
+                        self.tnfs.current_role = "user"
                         self.session = PromptSession(f"~{self.tnfs.current_user}--> ", key_bindings=self.bindings)
                         print_formatted_text(HTML(f"<ansigreen>Logged out</ansigreen>"))
                 elif command == "SEL":
                     if len(args) != 1:
-                        print_formatted_text(HTML("<ansired>Usage: SEL <enforcing/permissive></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: SEL <enforcing/permissive>')}</ansired>"))
                     else:
                         mode = args[0].lower()
                         if mode not in ["enforcing", "permissive"]:
@@ -204,14 +283,14 @@ class Shell:
                         print_formatted_text(HTML(f"<ansigreen>SELinux mode set to {html.escape(mode)}</ansigreen>"))
                 elif command == "addrule":
                     if len(args) < 4:
-                        print_formatted_text(HTML("<ansired>Usage: addrule <path> <operation> <type> <subjects...></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: addrule <path> <operation> <type> <subjects...>')}</ansired>"))
                     else:
                         path, operation, obj_type, *subjects = args
                         self.kernel.selinux.add_rule(path, operation, subjects, obj_type)
                         print_formatted_text(HTML(f"<ansigreen>Rule added: {html.escape(operation)} on {html.escape(path)} for {html.escape(str(subjects))} (type: {html.escape(obj_type)})</ansigreen>"))
                 elif command == "rmrule":
                     if len(args) < 3:
-                        print_formatted_text(HTML("<ansired>Usage: rmrule <path> <operation> <subjects...></ansired>"))
+                        print_formatted_text(HTML(f"<ansired>{html.escape('Usage: rmrule <path> <operation> <subjects...>')}</ansired>"))
                     else:
                         path, operation, *subjects = args
                         self.kernel.selinux.remove_rule(path, operation, subjects)
@@ -229,6 +308,12 @@ class Shell:
                 elif command == "L.warn":
                     self.kernel.crash_handler.warn("WARNING", "0xU0W0WRN", "Test user warning")
                     print_formatted_text(HTML(f"<ansigreen>Test warning triggered</ansigreen>"))
+                elif command == "su":
+                    if self.tnfs.current_user != "root":
+                        self._sudo()
+                        self._update_console()
+                    else:
+                        self.logger.warning("You already rooted")
                 elif command == "auditlogs":
                     logs = self.kernel.selinux.get_audit_logs()
                     for log in logs:
